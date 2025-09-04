@@ -3,7 +3,7 @@ import pandas as pd
 import pickle
 
 # ===============================
-# Load preprocessing pipeline & model
+# Load preprocessing tools & model
 # ===============================
 @st.cache_resource
 def load_tools():
@@ -15,27 +15,50 @@ def load_tools():
 
 preprocessor, model = load_tools()
 
+# ===============================
+# Load dataset for filter options
+# ===============================
+@st.cache_data
+def load_data():
+    df = pd.read_csv("Preprocessed.csv")  # before encoding/scaling
+    return df
+
+data = load_data()
+
 st.set_page_config(page_title="Car Price Prediction", page_icon="🚗", layout="centered")
 
 st.title("🚗 Car Price Prediction App")
-st.markdown("Enter the car details below to predict the price.")
+st.markdown("Fill in the details below to get the predicted price of the car.")
 
 # ===============================
-# Input fields (example: adjust to match your dataset columns)
+# Dynamic Input Fields from Dataset
 # ===============================
 col1, col2 = st.columns(2)
 
+# Numeric features (example: adjust to match your dataset)
 with col1:
-    year = st.number_input("Manufacturing Year", min_value=1990, max_value=2025, value=2015)
-    mileage = st.number_input("Mileage (km/l)", min_value=5.0, max_value=40.0, value=15.0)
-    engine_size = st.number_input("Engine Size (CC)", min_value=600, max_value=5000, value=1500)
+    year = st.number_input("Manufacturing Year", 
+                           min_value=int(data["year"].min()), 
+                           max_value=int(data["year"].max()), 
+                           value=int(data["year"].median()))
+    
+    mileage = st.number_input("Mileage (km/l)", 
+                              min_value=float(data["mileage"].min()), 
+                              max_value=float(data["mileage"].max()), 
+                              value=float(data["mileage"].median()))
+    
+    engine_size = st.number_input("Engine Size (CC)", 
+                                  min_value=int(data["engine_size"].min()), 
+                                  max_value=int(data["engine_size"].max()), 
+                                  value=int(data["engine_size"].median()))
 
+# Categorical features (options taken from dataset unique values)
 with col2:
-    brand = st.selectbox("Car Brand", ["Toyota", "Hyundai", "Ford", "BMW", "Audi"])
-    fuel_type = st.selectbox("Fuel Type", ["Petrol", "Diesel", "CNG", "Electric", "Hybrid"])
-    transmission = st.selectbox("Transmission", ["Manual", "Automatic"])
+    brand = st.selectbox("Car Brand", sorted(data["brand"].dropna().unique()))
+    fuel_type = st.selectbox("Fuel Type", sorted(data["fuel_type"].dropna().unique()))
+    transmission = st.selectbox("Transmission", sorted(data["transmission"].dropna().unique()))
 
-# Create dataframe from user input
+# Collect inputs into DataFrame
 input_dict = {
     "year": year,
     "mileage": mileage,
@@ -54,10 +77,10 @@ st.write(input_df)
 # ===============================
 if st.button("Predict Price"):
     try:
-        # Apply preprocessing (scaling + encoding)
+        # Apply preprocessing
         processed_input = preprocessor.transform(input_df)
 
-        # Predict using CatBoost
+        # Predict with CatBoost
         prediction = model.predict(processed_input)
 
         st.success(f"💰 Estimated Car Price: **₹ {prediction[0]:,.2f}**")

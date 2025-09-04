@@ -1,0 +1,20 @@
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore virtual environment
+.env/
+.venv/
+
+# Ignore datasets (since you don’t need Preprocessed.csv / Processed.csv for deployment)
+Preprocessed.csv
+Processed.csv

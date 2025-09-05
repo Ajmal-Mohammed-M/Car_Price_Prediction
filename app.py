@@ -25,14 +25,15 @@ if isinstance(tools, dict):
     st.sidebar.write("Keys:", list(tools.keys()))
 
 # ===============================
-# Load dataset for filter options
+# Load datasets
 # ===============================
 @st.cache_data
 def load_data():
-    df = pd.read_csv("Preprocessed.csv")  # dataset before encoding/scaling
-    return df
+    df_pre = pd.read_csv("Preprocessed.csv")  # before encoding/scaling
+    df_proc = pd.read_csv("Processed.csv")    # after encoding/scaling
+    return df_pre, df_proc
 
-data = load_data()
+data_pre, data_proc = load_data()
 
 st.set_page_config(page_title="Car Price Prediction", page_icon="🚗", layout="centered")
 
@@ -40,7 +41,7 @@ st.title("🚗 Car Price Prediction App")
 st.markdown("Fill in the details below to get the predicted price of the car.")
 
 # ===============================
-# Column mapping (based on your Preprocessed.csv)
+# Column mapping (from Preprocessed.csv)
 # ===============================
 col_map = {
     "year": "Year",
@@ -60,103 +61,75 @@ col1, col2 = st.columns(2)
 with col1:
     year = st.number_input(
         "Manufacturing Year",
-        min_value=int(data[col_map["year"]].min()),
-        max_value=int(data[col_map["year"]].max()),
-        value=int(data[col_map["year"]].median())
+        min_value=int(data_pre[col_map["year"]].min()),
+        max_value=int(data_pre[col_map["year"]].max()),
+        value=int(data_pre[col_map["year"]].median())
     )
 
     kilometer = st.number_input(
         "Kilometers Driven",
-        min_value=int(data[col_map["kilometer"]].min()),
-        max_value=int(data[col_map["kilometer"]].max()),
-        value=int(data[col_map["kilometer"]].median())
+        min_value=int(data_pre[col_map["kilometer"]].min()),
+        max_value=int(data_pre[col_map["kilometer"]].max()),
+        value=int(data_pre[col_map["kilometer"]].median())
     )
 
-    # Engine values like "1498 CC" → extract digits
-    engine_options = data[col_map["engine"]].dropna().unique()
-    engine = st.selectbox("Engine Size", engine_options)
-    engine_numeric = int(re.findall(r"\d+", str(engine))[0]) if re.findall(r"\d+", str(engine)) else 0
+    # Engine values like "1198 cc" → extract digits
+    engine_options = data_pre[col_map["engine"]].dropna().unique()
+    engine_raw = st.selectbox("Engine Size", engine_options)
+    engine_numeric = int(re.findall(r"\d+", str(engine_raw))[0]) if re.findall(r"\d+", str(engine_raw)) else 0
 
 with col2:
-    make = st.selectbox("Car Make", sorted(data[col_map["make"]].dropna().unique()))
-    model_name = st.selectbox("Car Model", sorted(data[col_map["model"]].dropna().unique()))
-    fuel_type = st.selectbox("Fuel Type", sorted(data[col_map["fuel_type"]].dropna().unique()))
-    transmission = st.selectbox("Transmission", sorted(data[col_map["transmission"]].dropna().unique()))
+    make = st.selectbox("Car Make", sorted(data_pre[col_map["make"]].dropna().unique()))
+    model_name = st.selectbox("Car Model", sorted(data_pre[col_map["model"]].dropna().unique()))
+    fuel_type = st.selectbox("Fuel Type", sorted(data_pre[col_map["fuel_type"]].dropna().unique()))
+    transmission = st.selectbox("Transmission", sorted(data_pre[col_map["transmission"]].dropna().unique()))
 
 # ===============================
-# Build input DataFrame
+# Build input with ALL training columns
 # ===============================
-input_dict = {
-    col_map["year"]: year,
-    col_map["kilometer"]: kilometer,
-    col_map["engine"]: engine,  # keep original string, preprocessing may handle it
-    col_map["make"]: make,
-    col_map["model"]: model_name,
-    col_map["fuel_type"]: fuel_type,
-    col_map["transmission"]: transmission
-}
-input_df = pd.DataFrame([input_dict])
+# Start with empty row using Processed.csv columns
+input_full = pd.DataFrame(columns=data_proc.drop("Price", axis=1, errors="ignore").columns)
 
-st.subheader("🔍 Entered Details")
-st.write(input_df)
+# Fill values
+row = {}
+row[col_map["year"]] = year
+row[col_map["kilometer"]] = kilometer
+row[col_map["engine"]] = engine_numeric   # numeric version
+row[col_map["make"]] = make
+row[col_map["model"]] = model_name
+row[col_map["fuel_type"]] = fuel_type
+row[col_map["transmission"]] = transmission
+
+# Fill missing features with default values
+for col in input_full.columns:
+    if col not in row:
+        row[col] = 0 if data_proc[col].dtype != "object" else "Unknown"
+
+input_full = pd.DataFrame([row], columns=input_full.columns)
+
+st.subheader("🔍 Entered Details (Processed Input)")
+st.write(input_full)
 
 # ===============================
 # Apply preprocessing safely
 # ===============================
 def apply_preprocessing(df, tools):
-    """
-    Safely apply preprocessing depending on whether tools is a dict or a pipeline.
-    """
-    X = df.copy()
-
-    # Case 1: tools is a dict
     if isinstance(tools, dict):
         if "preprocessor" in tools:
-            X = tools["preprocessor"].transform(X)
-        else:
-            # Assume dict might contain encoder/scaler separately
-            cat_cols = ["Make", "Model", "Fuel Type", "Transmission"]
-            num_cols = ["Year", "Kilometer", "Engine"]
-
-            X_num, X_cat = None, None
-
-            if "scaler" in tools and all(col in df.columns for col in num_cols):
-                try:
-                    X_num = tools["scaler"].transform(df[num_cols])
-                except Exception as e:
-                    st.error("⚠️ Error applying scaler")
-                    st.code(traceback.format_exc())
-
-            if "encoder" in tools and all(col in df.columns for col in cat_cols):
-                try:
-                    X_cat = tools["encoder"].transform(df[cat_cols])
-                except Exception as e:
-                    st.error("⚠️ Error applying encoder")
-                    st.code(traceback.format_exc())
-
-            # Merge numeric + categorical
-            parts = []
-            if X_num is not None:
-                parts.append(pd.DataFrame(X_num))
-            if X_cat is not None:
-                if not isinstance(X_cat, (pd.DataFrame, np.ndarray)):
-                    X_cat = pd.DataFrame(X_cat)
-                parts.append(pd.DataFrame(X_cat))
-            if parts:
-                X = pd.concat(parts, axis=1)
-
-    # Case 2: tools is a pipeline (ColumnTransformer or Pipeline)
+            return tools["preprocessor"].transform(df)
+        elif "scaler" in tools or "encoder" in tools:
+            # If manually split objects, just pass through
+            return df  # assume already numeric
     else:
-        X = tools.transform(X)
-
-    return X
+        return tools.transform(df)
+    return df
 
 # ===============================
 # Prediction
 # ===============================
 if st.button("Predict Price"):
     try:
-        processed_input = apply_preprocessing(input_df, tools)
+        processed_input = apply_preprocessing(input_full, tools)
 
         prediction = model.predict(processed_input)
 

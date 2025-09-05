@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import pickle
+import traceback
 
 # ===============================
 # Load preprocessing tools & model
@@ -20,7 +21,7 @@ preprocessor, model = load_tools()
 # ===============================
 @st.cache_data
 def load_data():
-    df = pd.read_csv("Preprocessed.csv")  # before encoding/scaling
+    df = pd.read_csv("Preprocessed.csv")  # dataset before encoding/scaling
     return df
 
 data = load_data()
@@ -31,41 +32,63 @@ st.title("🚗 Car Price Prediction App")
 st.markdown("Fill in the details below to get the predicted price of the car.")
 
 # ===============================
-# Dynamic Input Fields from Dataset
+# Show available columns (for debugging)
+# ===============================
+st.sidebar.header("ℹ️ Dataset Info")
+st.sidebar.write("Columns found in dataset:", list(data.columns))
+
+# ---- IMPORTANT ----
+# Adjust these mappings according to your actual Preprocessed.csv column names
+# Example mapping (change if needed):
+col_map = {
+    "year": "Year",                 # Manufacturing Year column
+    "mileage": "Mileage",           # Mileage column
+    "engine_size": "Engine_Size",   # Engine Size column
+    "brand": "Brand",               # Brand column
+    "fuel_type": "Fuel_Type",       # Fuel Type column
+    "transmission": "Transmission"  # Transmission column
+}
+
+# ===============================
+# Dynamic Input Fields
 # ===============================
 col1, col2 = st.columns(2)
 
-# Numeric features (example: adjust to match your dataset)
 with col1:
-    year = st.number_input("Manufacturing Year", 
-                           min_value=int(data["year"].min()), 
-                           max_value=int(data["year"].max()), 
-                           value=int(data["year"].median()))
-    
-    mileage = st.number_input("Mileage (km/l)", 
-                              min_value=float(data["mileage"].min()), 
-                              max_value=float(data["mileage"].max()), 
-                              value=float(data["mileage"].median()))
-    
-    engine_size = st.number_input("Engine Size (CC)", 
-                                  min_value=int(data["engine_size"].min()), 
-                                  max_value=int(data["engine_size"].max()), 
-                                  value=int(data["engine_size"].median()))
+    year = st.number_input(
+        "Manufacturing Year",
+        min_value=int(data[col_map["year"]].min()),
+        max_value=int(data[col_map["year"]].max()),
+        value=int(data[col_map["year"]].median())
+    )
 
-# Categorical features (options taken from dataset unique values)
+    mileage = st.number_input(
+        "Mileage (km/l)",
+        min_value=float(data[col_map["mileage"]].min()),
+        max_value=float(data[col_map["mileage"]].max()),
+        value=float(data[col_map["mileage"]].median())
+    )
+
+    engine_size = st.number_input(
+        "Engine Size (CC)",
+        min_value=int(data[col_map["engine_size"]].min()),
+        max_value=int(data[col_map["engine_size"]].max()),
+        value=int(data[col_map["engine_size"]].median())
+    )
+
 with col2:
-    brand = st.selectbox("Car Brand", sorted(data["brand"].dropna().unique()))
-    fuel_type = st.selectbox("Fuel Type", sorted(data["fuel_type"].dropna().unique()))
-    transmission = st.selectbox("Transmission", sorted(data["transmission"].dropna().unique()))
+    brand = st.selectbox("Car Brand", sorted(data[col_map["brand"]].dropna().unique()))
+    fuel_type = st.selectbox("Fuel Type", sorted(data[col_map["fuel_type"]].dropna().unique()))
+    transmission = st.selectbox("Transmission", sorted(data[col_map["transmission"]].dropna().unique()))
 
 # Collect inputs into DataFrame
 input_dict = {
-    "year": year,
-    "mileage": mileage,
-    "engine_size": engine_size,
-    "brand": brand,
-    "fuel_type": fuel_type,
-    "transmission": transmission
+    col_map["year"]: year,
+    col_map["mileage"]: mileage,
+    col_map["engine_size"]: engine_size,
+    col_map["brand"]: brand,
+    col_map["fuel_type"]: fuel_type,
+    col_map["transmission"]: transmission
 }
 input_df = pd.DataFrame([input_dict])
 
@@ -86,6 +109,5 @@ if st.button("Predict Price"):
         st.success(f"💰 Estimated Car Price: **₹ {prediction[0]:,.2f}**")
 
     except Exception as e:
-        import traceback
         st.error("⚠️ An error occurred during prediction.")
-        st.code(traceback.format_exc())  # show full error log
+        st.code(traceback.format_exc())

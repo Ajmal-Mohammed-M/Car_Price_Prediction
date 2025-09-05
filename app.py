@@ -13,7 +13,7 @@ def load_tools_and_model():
     with open("preprocessing_tools.pkl", "rb") as f:
         tools = pickle.load(f)
     with open("catboost_best_model.pkl", "rb") as f:
-        model = pickle.load(f)   # ✅ use pickle.load only
+        model = pickle.load(f)   # ✅ already pickled
     return tools, model
 
 tools, model = load_tools_and_model()
@@ -79,38 +79,49 @@ st.subheader("🔍 Entered Details")
 st.write(input_df)
 
 # ===============================
-# Apply preprocessing to match training
+# Apply preprocessing
 # ===============================
 def apply_preprocessing(df, tools, reference_df):
     try:
+        # Training schema (drop Price if exists)
         schema_cols = reference_df.drop("Price", axis=1, errors="ignore").columns
 
-        filled_row = {}
+        # Force alignment
+        aligned = pd.DataFrame(columns=schema_cols)
+
+        # Fill with input values or defaults
+        row = {}
         for col in schema_cols:
             if col in df.columns:
-                filled_row[col] = df[col].iloc[0]
+                row[col] = df[col].iloc[0]
             else:
+                # Fill missing with median/mode from training data
                 if reference_df[col].dtype != "object":
-                    filled_row[col] = reference_df[col].median()
+                    row[col] = reference_df[col].median()
                 else:
-                    filled_row[col] = (
-                        reference_df[col].mode()[0]
-                        if not reference_df[col].mode().empty
-                        else "Unknown"
-                    )
+                    row[col] = reference_df[col].mode()[0] if not reference_df[col].mode().empty else "Unknown"
 
-        full_df = pd.DataFrame([filled_row], columns=schema_cols)
+        aligned.loc[0] = row
 
-        num_cols = full_df.select_dtypes(include=[np.number]).columns
-        cat_cols = full_df.select_dtypes(include=["object"]).columns
+        # Numeric + categorical separation
+        num_cols = [c for c in aligned.columns if aligned[c].dtype != "object"]
+        cat_cols = [c for c in aligned.columns if aligned[c].dtype == "object"]
 
-        X_num = tools["scaler"].transform(full_df[num_cols])
-        X_num = pd.DataFrame(X_num, index=full_df.index)
+        # Scale numeric
+        if num_cols:
+            X_num = tools["scaler"].transform(aligned[num_cols])
+            X_num = pd.DataFrame(X_num, index=aligned.index)
+        else:
+            X_num = pd.DataFrame()
 
-        X_cat = tools["encoder"].transform(full_df[cat_cols])
-        if hasattr(X_cat, "toarray"):
-            X_cat = X_cat.toarray()
-        X_cat = pd.DataFrame(X_cat, index=full_df.index)
+        # Encode categoricals
+        if cat_cols:
+            X_cat = tools["encoder"].transform(aligned[cat_cols])
+            if hasattr(X_cat, "toarray"):
+                X_cat = X_cat.toarray()
+            X_cat = pd.DataFrame(X_cat, index=aligned.index)
+        else:
+            X_cat = pd.DataFrame()
 
         return pd.concat([X_num, X_cat], axis=1)
 

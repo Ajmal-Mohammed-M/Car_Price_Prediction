@@ -21,15 +21,14 @@ def load_tools_and_model():
 scaler, label_encoders, model = load_tools_and_model()
 
 # ===============================
-# Load datasets
+# Load dataset (only Preprocessed.csv)
 # ===============================
 @st.cache_data
 def load_data():
     df_pre = pd.read_csv("Preprocessed.csv")  # before encoding/scaling
-    df_proc = pd.read_csv("Processed.csv")    # after encoding/scaling
-    return df_pre, df_proc
+    return df_pre
 
-data_pre, data_proc = load_data()
+data_pre = load_data()
 
 st.set_page_config(page_title="Car Price Prediction", page_icon="🚗", layout="centered")
 
@@ -84,13 +83,10 @@ with col2:
     owner = st.selectbox("Owner Type", sorted(data_pre["Owner"].dropna().unique()))
     seller_type = st.selectbox("Seller Type", sorted(data_pre["Seller Type"].dropna().unique()))
 
-# Additional fields in another row
 col3, col4 = st.columns(2)
 
 with col3:
     engine_raw = st.selectbox("Engine Size", data_pre["Engine"].dropna().unique())
-    engine_numeric = int(re.findall(r"\d+", str(engine_raw))[0]) if re.findall(r"\d+", str(engine_raw)) else 0
-
     max_power = st.selectbox("Max Power", data_pre["Max Power"].dropna().unique())
     max_torque = st.selectbox("Max Torque", data_pre["Max Torque"].dropna().unique())
     drivetrain = st.selectbox("Drivetrain", data_pre["Drivetrain"].dropna().unique())
@@ -181,7 +177,7 @@ def apply_preprocessing(df, scaler, label_encoders, reference_df):
                 except ValueError:
                     X_cat[col] = aligned[col].apply(lambda x: le.transform([x])[0] if x in le.classes_ else -1)
             else:
-                X_cat[col] = 0  # fallback if encoder missing
+                X_cat[col] = 0  # fallback
 
         return pd.concat([X_num, X_cat], axis=1)
 
@@ -195,7 +191,7 @@ def apply_preprocessing(df, scaler, label_encoders, reference_df):
 # ===============================
 if st.button("Predict Price"):
     try:
-        processed_input = apply_preprocessing(input_df, scaler, label_encoders, data_proc)
+        processed_input = apply_preprocessing(input_df, scaler, label_encoders, data_pre)
 
         if processed_input is not None:
             prediction = model.predict(processed_input)

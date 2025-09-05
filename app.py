@@ -10,13 +10,15 @@ import traceback
 # ===============================
 @st.cache_resource
 def load_tools_and_model():
-    with open("preprocessing_tools.pkl", "rb") as f:
-        tools = pickle.load(f)
+    with open("scaler.pkl", "rb") as f:
+        scaler = pickle.load(f)
+    with open("label_encoders.pkl", "rb") as f:
+        label_encoders = pickle.load(f)
     with open("catboost_best_model.pkl", "rb") as f:
-        model = pickle.load(f)   # ✅ already pickled
-    return tools, model
+        model = pickle.load(f)
+    return scaler, label_encoders, model
 
-tools, model = load_tools_and_model()
+scaler, label_encoders, model = load_tools_and_model()
 
 # ===============================
 # Load datasets
@@ -37,6 +39,8 @@ st.markdown("Fill in the details below to get the predicted price of the car.")
 # ===============================
 # Input Fields
 # ===============================
+st.subheader("📋 Enter Car Details")
+
 col1, col2 = st.columns(2)
 
 with col1:
@@ -52,26 +56,81 @@ with col1:
         value=int(data_pre["Kilometer"].median())
     )
 
-    engine_raw = st.selectbox("Engine Size", data_pre["Engine"].dropna().unique())
-    engine_numeric = int(re.findall(r"\d+", str(engine_raw))[0]) if re.findall(r"\d+", str(engine_raw)) else 0
+    length = st.number_input("Car Length (mm)",
+        min_value=float(data_pre["Length"].min()),
+        max_value=float(data_pre["Length"].max()),
+        value=float(data_pre["Length"].median())
+    )
+
+    width = st.number_input("Car Width (mm)",
+        min_value=float(data_pre["Width"].min()),
+        max_value=float(data_pre["Width"].max()),
+        value=float(data_pre["Width"].median())
+    )
+
+    height = st.number_input("Car Height (mm)",
+        min_value=float(data_pre["Height"].min()),
+        max_value=float(data_pre["Height"].max()),
+        value=float(data_pre["Height"].median())
+    )
 
 with col2:
     make = st.selectbox("Car Make", sorted(data_pre["Make"].dropna().unique()))
     model_name = st.selectbox("Car Model", sorted(data_pre["Model"].dropna().unique()))
     fuel_type = st.selectbox("Fuel Type", sorted(data_pre["Fuel Type"].dropna().unique()))
     transmission = st.selectbox("Transmission", sorted(data_pre["Transmission"].dropna().unique()))
+    location = st.selectbox("Location", sorted(data_pre["Location"].dropna().unique()))
+    color = st.selectbox("Color", sorted(data_pre["Color"].dropna().unique()))
+    owner = st.selectbox("Owner Type", sorted(data_pre["Owner"].dropna().unique()))
+    seller_type = st.selectbox("Seller Type", sorted(data_pre["Seller Type"].dropna().unique()))
+
+# Additional fields in another row
+col3, col4 = st.columns(2)
+
+with col3:
+    engine_raw = st.selectbox("Engine Size", data_pre["Engine"].dropna().unique())
+    engine_numeric = int(re.findall(r"\d+", str(engine_raw))[0]) if re.findall(r"\d+", str(engine_raw)) else 0
+
+    max_power = st.selectbox("Max Power", data_pre["Max Power"].dropna().unique())
+    max_torque = st.selectbox("Max Torque", data_pre["Max Torque"].dropna().unique())
+    drivetrain = st.selectbox("Drivetrain", data_pre["Drivetrain"].dropna().unique())
+
+with col4:
+    seating_capacity = st.number_input("Seating Capacity",
+        min_value=float(data_pre["Seating Capacity"].min()),
+        max_value=float(data_pre["Seating Capacity"].max()),
+        value=float(data_pre["Seating Capacity"].median())
+    )
+
+    fuel_tank_capacity = st.number_input("Fuel Tank Capacity (Litres)",
+        min_value=float(data_pre["Fuel Tank Capacity"].min()),
+        max_value=float(data_pre["Fuel Tank Capacity"].max()),
+        value=float(data_pre["Fuel Tank Capacity"].median())
+    )
 
 # ===============================
 # Build input row
 # ===============================
 input_dict = {
-    "Year": year,
-    "Kilometer": kilometer,
-    "Engine": engine_numeric,
     "Make": make,
     "Model": model_name,
+    "Year": year,
+    "Kilometer": kilometer,
     "Fuel Type": fuel_type,
-    "Transmission": transmission
+    "Transmission": transmission,
+    "Location": location,
+    "Color": color,
+    "Owner": owner,
+    "Seller Type": seller_type,
+    "Engine": engine_raw,
+    "Max Power": max_power,
+    "Max Torque": max_torque,
+    "Drivetrain": drivetrain,
+    "Length": length,
+    "Width": width,
+    "Height": height,
+    "Seating Capacity": seating_capacity,
+    "Fuel Tank Capacity": fuel_tank_capacity,
 }
 input_df = pd.DataFrame([input_dict])
 
@@ -81,21 +140,19 @@ st.write(input_df)
 # ===============================
 # Apply preprocessing
 # ===============================
-def apply_preprocessing(df, tools, reference_df):
+def apply_preprocessing(df, scaler, label_encoders, reference_df):
     try:
         # Training schema (drop Price if exists)
         schema_cols = reference_df.drop("Price", axis=1, errors="ignore").columns
 
         # Force alignment
         aligned = pd.DataFrame(columns=schema_cols)
-
-        # Fill with input values or defaults
         row = {}
+
         for col in schema_cols:
             if col in df.columns:
                 row[col] = df[col].iloc[0]
             else:
-                # Fill missing with median/mode from training data
                 if reference_df[col].dtype != "object":
                     row[col] = reference_df[col].median()
                 else:
@@ -109,19 +166,22 @@ def apply_preprocessing(df, tools, reference_df):
 
         # Scale numeric
         if num_cols:
-            X_num = tools["scaler"].transform(aligned[num_cols])
+            X_num = scaler.transform(aligned[num_cols])
             X_num = pd.DataFrame(X_num, index=aligned.index)
         else:
             X_num = pd.DataFrame()
 
         # Encode categoricals
-        if cat_cols:
-            X_cat = tools["encoder"].transform(aligned[cat_cols])
-            if hasattr(X_cat, "toarray"):
-                X_cat = X_cat.toarray()
-            X_cat = pd.DataFrame(X_cat, index=aligned.index)
-        else:
-            X_cat = pd.DataFrame()
+        X_cat = pd.DataFrame(index=aligned.index)
+        for col in cat_cols:
+            if col in label_encoders:
+                le = label_encoders[col]
+                try:
+                    X_cat[col] = le.transform(aligned[col])
+                except ValueError:
+                    X_cat[col] = aligned[col].apply(lambda x: le.transform([x])[0] if x in le.classes_ else -1)
+            else:
+                X_cat[col] = 0  # fallback if encoder missing
 
         return pd.concat([X_num, X_cat], axis=1)
 
@@ -135,7 +195,7 @@ def apply_preprocessing(df, tools, reference_df):
 # ===============================
 if st.button("Predict Price"):
     try:
-        processed_input = apply_preprocessing(input_df, tools, data_proc)
+        processed_input = apply_preprocessing(input_df, scaler, label_encoders, data_proc)
 
         if processed_input is not None:
             prediction = model.predict(processed_input)

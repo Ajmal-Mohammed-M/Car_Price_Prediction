@@ -3,6 +3,7 @@ import pandas as pd
 import pickle
 import traceback
 import re
+import numpy as np
 
 # ===============================
 # Load preprocessing tools & model
@@ -37,7 +38,7 @@ st.title("🚗 Car Price Prediction App")
 st.markdown("Fill in the details below to get the predicted price of the car.")
 
 # ===============================
-# Input Fields (from Preprocessed.csv columns)
+# Input Fields
 # ===============================
 col1, col2 = st.columns(2)
 
@@ -56,8 +57,10 @@ with col1:
         value=int(data["Kilometer"].median())
     )
 
+    # Engine values like "1198 cc" → extract digits
     engine_options = data["Engine"].dropna().unique()
-    engine = st.selectbox("Engine Size", engine_options)
+    engine_raw = st.selectbox("Engine Size", engine_options)
+    engine_numeric = int(re.findall(r"\d+", str(engine_raw))[0]) if re.findall(r"\d+", str(engine_raw)) else 0
 
 with col2:
     make = st.selectbox("Car Make", sorted(data["Make"].dropna().unique()))
@@ -66,12 +69,12 @@ with col2:
     transmission = st.selectbox("Transmission", sorted(data["Transmission"].dropna().unique()))
 
 # ===============================
-# Build raw input DataFrame (same as Preprocessed.csv format)
+# Build raw input DataFrame
 # ===============================
 input_dict = {
     "Year": year,
     "Kilometer": kilometer,
-    "Engine": engine,
+    "Engine": engine_numeric,  # cleaned numeric version
     "Make": make,
     "Model": model_name,
     "Fuel Type": fuel_type,
@@ -83,17 +86,40 @@ st.subheader("🔍 Entered Details")
 st.write(input_df)
 
 # ===============================
-# Apply preprocessing correctly
+# Apply preprocessing manually
 # ===============================
 def apply_preprocessing(df, tools):
-    if isinstance(tools, dict):
-        if "preprocessor" in tools:
-            return tools["preprocessor"].transform(df)
-        else:
-            st.error("❌ Could not find 'preprocessor' in preprocessing tools.")
-            return None
-    else:
-        return tools.transform(df)
+    try:
+        cat_cols = ["Make", "Model", "Fuel Type", "Transmission"]
+        num_cols = ["Year", "Kilometer", "Engine"]
+
+        X_num, X_cat = None, None
+
+        # Apply scaler
+        if "scaler" in tools and all(col in df.columns for col in num_cols):
+            X_num = tools["scaler"].transform(df[num_cols])
+            X_num = pd.DataFrame(X_num, index=df.index)
+
+        # Apply encoder
+        if "encoder" in tools and all(col in df.columns for col in cat_cols):
+            X_cat = tools["encoder"].transform(df[cat_cols])
+            if not isinstance(X_cat, (pd.DataFrame, np.ndarray)):
+                X_cat = pd.DataFrame(X_cat.toarray() if hasattr(X_cat, "toarray") else X_cat)
+
+        # Merge
+        parts = []
+        if X_num is not None:
+            parts.append(X_num)
+        if X_cat is not None:
+            parts.append(pd.DataFrame(X_cat, index=df.index))
+        if parts:
+            return pd.concat(parts, axis=1)
+
+        return df
+    except Exception:
+        st.error("⚠️ Error during preprocessing")
+        st.code(traceback.format_exc())
+        return None
 
 # ===============================
 # Prediction

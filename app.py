@@ -84,5 +84,8 @@ if st.button("Predict Price"):
         prediction = model.predict(processed_input)
 
         st.success(f"💰 Estimated Car Price: **₹ {prediction[0]:,.2f}**")
+
     except Exception as e:
-        st.error(f"⚠️ Error during prediction: {e}")
+        import traceback
+        st.error("⚠️ An error occurred during prediction.")
+        st.code(traceback.format_exc())  # show full error log

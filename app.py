@@ -141,7 +141,6 @@ def apply_preprocessing(df, scaler, label_encoders, reference_df):
         # Training schema (drop Price if exists)
         schema_cols = reference_df.drop("Price", axis=1, errors="ignore").columns
 
-        # Force alignment
         aligned = pd.DataFrame(columns=schema_cols)
         row = {}
 
@@ -157,7 +156,7 @@ def apply_preprocessing(df, scaler, label_encoders, reference_df):
         aligned.loc[0] = row
 
         # Numeric + categorical separation
-        num_cols = [c for c in aligned.columns if aligned[c].dtype != "object"]
+        num_cols = [c for c in aligned.columns if aligned[c].dtype != "object" and c != "Price"]
         cat_cols = [c for c in aligned.columns if aligned[c].dtype == "object"]
 
         # Scale numeric

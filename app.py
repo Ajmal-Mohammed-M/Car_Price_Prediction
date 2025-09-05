@@ -32,14 +32,16 @@ st.title("🚗 Car Price Prediction App")
 st.markdown("Fill in the details below to get the predicted price of the car.")
 
 # ===============================
-# Show available columns (for debugging)
+# Show available columns (debugging)
 # ===============================
-st.sidebar.header("ℹ️ Dataset Info")
-st.sidebar.write("Columns found in dataset:", list(data.columns))
+st.sidebar.header("📑 Dataset Info")
+st.sidebar.write("Columns detected in dataset:", list(data.columns))
 
-# ---- IMPORTANT ----
-# Adjust these mappings according to your actual Preprocessed.csv column names
-# Example mapping (change if needed):
+# ===============================
+# Column mapping
+# 🔴 Change the values here to EXACTLY match your CSV headers
+# Example: if your CSV header is 'Mileage(kmpl)' then put that instead of 'Mileage'
+# ===============================
 col_map = {
     "year": "Year",                 # Manufacturing Year column
     "mileage": "Mileage",           # Mileage column
@@ -48,6 +50,12 @@ col_map = {
     "fuel_type": "Fuel_Type",       # Fuel Type column
     "transmission": "Transmission"  # Transmission column
 }
+
+# Validate columns
+missing = [v for v in col_map.values() if v not in data.columns]
+if missing:
+    st.error(f"⚠️ These columns are missing in your Preprocessed.csv: {missing}")
+    st.stop()
 
 # ===============================
 # Dynamic Input Fields
@@ -63,7 +71,7 @@ with col1:
     )
 
     mileage = st.number_input(
-        "Mileage (km/l)",
+        "Mileage",
         min_value=float(data[col_map["mileage"]].min()),
         max_value=float(data[col_map["mileage"]].max()),
         value=float(data[col_map["mileage"]].median())

@@ -3,7 +3,6 @@ import pandas as pd
 import pickle
 import traceback
 import re
-import numpy as np
 
 # ===============================
 # Load preprocessing tools & model
@@ -18,22 +17,19 @@ def load_tools():
 
 tools, model = load_tools()
 
-# Sidebar debug info
 st.sidebar.subheader("🔧 Preprocessing Tools Info")
 st.sidebar.write("Type:", type(tools))
 if isinstance(tools, dict):
     st.sidebar.write("Keys:", list(tools.keys()))
 
 # ===============================
-# Load datasets
+# Load dataset for UI options
 # ===============================
 @st.cache_data
 def load_data():
-    df_pre = pd.read_csv("Preprocessed.csv")  # before encoding/scaling
-    df_proc = pd.read_csv("Processed.csv")    # after encoding/scaling
-    return df_pre, df_proc
+    return pd.read_csv("Preprocessed.csv")
 
-data_pre, data_proc = load_data()
+data = load_data()
 
 st.set_page_config(page_title="Car Price Prediction", page_icon="🚗", layout="centered")
 
@@ -41,100 +37,75 @@ st.title("🚗 Car Price Prediction App")
 st.markdown("Fill in the details below to get the predicted price of the car.")
 
 # ===============================
-# Column mapping (from Preprocessed.csv)
-# ===============================
-col_map = {
-    "year": "Year",
-    "kilometer": "Kilometer",
-    "engine": "Engine",
-    "make": "Make",
-    "model": "Model",
-    "fuel_type": "Fuel Type",
-    "transmission": "Transmission"
-}
-
-# ===============================
-# Dynamic Input Fields
+# Input Fields (from Preprocessed.csv columns)
 # ===============================
 col1, col2 = st.columns(2)
 
 with col1:
     year = st.number_input(
         "Manufacturing Year",
-        min_value=int(data_pre[col_map["year"]].min()),
-        max_value=int(data_pre[col_map["year"]].max()),
-        value=int(data_pre[col_map["year"]].median())
+        min_value=int(data["Year"].min()),
+        max_value=int(data["Year"].max()),
+        value=int(data["Year"].median())
     )
 
     kilometer = st.number_input(
         "Kilometers Driven",
-        min_value=int(data_pre[col_map["kilometer"]].min()),
-        max_value=int(data_pre[col_map["kilometer"]].max()),
-        value=int(data_pre[col_map["kilometer"]].median())
+        min_value=int(data["Kilometer"].min()),
+        max_value=int(data["Kilometer"].max()),
+        value=int(data["Kilometer"].median())
     )
 
-    # Engine values like "1198 cc" → extract digits
-    engine_options = data_pre[col_map["engine"]].dropna().unique()
-    engine_raw = st.selectbox("Engine Size", engine_options)
-    engine_numeric = int(re.findall(r"\d+", str(engine_raw))[0]) if re.findall(r"\d+", str(engine_raw)) else 0
+    engine_options = data["Engine"].dropna().unique()
+    engine = st.selectbox("Engine Size", engine_options)
 
 with col2:
-    make = st.selectbox("Car Make", sorted(data_pre[col_map["make"]].dropna().unique()))
-    model_name = st.selectbox("Car Model", sorted(data_pre[col_map["model"]].dropna().unique()))
-    fuel_type = st.selectbox("Fuel Type", sorted(data_pre[col_map["fuel_type"]].dropna().unique()))
-    transmission = st.selectbox("Transmission", sorted(data_pre[col_map["transmission"]].dropna().unique()))
+    make = st.selectbox("Car Make", sorted(data["Make"].dropna().unique()))
+    model_name = st.selectbox("Car Model", sorted(data["Model"].dropna().unique()))
+    fuel_type = st.selectbox("Fuel Type", sorted(data["Fuel Type"].dropna().unique()))
+    transmission = st.selectbox("Transmission", sorted(data["Transmission"].dropna().unique()))
 
 # ===============================
-# Build input with ALL training columns
+# Build raw input DataFrame (same as Preprocessed.csv format)
 # ===============================
-# Start with empty row using Processed.csv columns
-input_full = pd.DataFrame(columns=data_proc.drop("Price", axis=1, errors="ignore").columns)
+input_dict = {
+    "Year": year,
+    "Kilometer": kilometer,
+    "Engine": engine,
+    "Make": make,
+    "Model": model_name,
+    "Fuel Type": fuel_type,
+    "Transmission": transmission
+}
+input_df = pd.DataFrame([input_dict])
 
-# Fill values
-row = {}
-row[col_map["year"]] = year
-row[col_map["kilometer"]] = kilometer
-row[col_map["engine"]] = engine_numeric   # numeric version
-row[col_map["make"]] = make
-row[col_map["model"]] = model_name
-row[col_map["fuel_type"]] = fuel_type
-row[col_map["transmission"]] = transmission
-
-# Fill missing features with default values
-for col in input_full.columns:
-    if col not in row:
-        row[col] = 0 if data_proc[col].dtype != "object" else "Unknown"
-
-input_full = pd.DataFrame([row], columns=input_full.columns)
-
-st.subheader("🔍 Entered Details (Processed Input)")
-st.write(input_full)
+st.subheader("🔍 Entered Details")
+st.write(input_df)
 
 # ===============================
-# Apply preprocessing safely
+# Apply preprocessing correctly
 # ===============================
 def apply_preprocessing(df, tools):
     if isinstance(tools, dict):
         if "preprocessor" in tools:
             return tools["preprocessor"].transform(df)
-        elif "scaler" in tools or "encoder" in tools:
-            # If manually split objects, just pass through
-            return df  # assume already numeric
+        else:
+            st.error("❌ Could not find 'preprocessor' in preprocessing tools.")
+            return None
     else:
         return tools.transform(df)
-    return df
 
 # ===============================
 # Prediction
 # ===============================
 if st.button("Predict Price"):
     try:
-        processed_input = apply_preprocessing(input_full, tools)
+        processed_input = apply_preprocessing(input_df, tools)
 
-        prediction = model.predict(processed_input)
+        if processed_input is not None:
+            prediction = model.predict(processed_input)
+            st.success(f"💰 Estimated Car Price: **₹ {prediction[0]:,.2f}**")
 
-        st.success(f"💰 Estimated Car Price: **₹ {prediction[0]:,.2f}**")
-
-    except Exception as e:
+    except Exception:
         st.error("⚠️ An error occurred during prediction.")
         st.code(traceback.format_exc())

@@ -86,36 +86,36 @@ st.subheader("🔍 Entered Details")
 st.write(input_df)
 
 # ===============================
-# Apply preprocessing manually
+# Apply preprocessing (fixed version)
 # ===============================
 def apply_preprocessing(df, tools):
     try:
-        cat_cols = ["Make", "Model", "Fuel Type", "Transmission"]
-        num_cols = ["Year", "Kilometer", "Engine"]
+        # Identify expected features
+        expected_features = tools.get("feature_names", None)
+        num_cols = tools.get("num_cols", [])
+        cat_cols = tools.get("cat_cols", [])
 
-        X_num, X_cat = None, None
+        # Reindex to match training features
+        if expected_features is not None:
+            df = df.reindex(columns=expected_features, fill_value=0)
 
-        # Apply scaler
-        if "scaler" in tools and all(col in df.columns for col in num_cols):
-            X_num = tools["scaler"].transform(df[num_cols])
-            X_num = pd.DataFrame(X_num, index=df.index)
+        # Scale numerical columns
+        if "scaler" in tools and num_cols:
+            df[num_cols] = tools["scaler"].transform(df[num_cols])
 
-        # Apply encoder
-        if "encoder" in tools and all(col in df.columns for col in cat_cols):
-            X_cat = tools["encoder"].transform(df[cat_cols])
-            if not isinstance(X_cat, (pd.DataFrame, np.ndarray)):
-                X_cat = pd.DataFrame(X_cat.toarray() if hasattr(X_cat, "toarray") else X_cat)
+        # Encode categorical columns
+        if "encoder" in tools and cat_cols:
+            encoded = tools["encoder"].transform(df[cat_cols])
+            if not isinstance(encoded, (pd.DataFrame, np.ndarray)):
+                encoded = encoded.toarray()
+            encoded_df = pd.DataFrame(encoded, index=df.index)
 
-        # Merge
-        parts = []
-        if X_num is not None:
-            parts.append(X_num)
-        if X_cat is not None:
-            parts.append(pd.DataFrame(X_cat, index=df.index))
-        if parts:
-            return pd.concat(parts, axis=1)
+            # Drop original categorical cols and concat encoded
+            df = df.drop(columns=cat_cols)
+            df = pd.concat([df, encoded_df], axis=1)
 
         return df
+
     except Exception:
         st.error("⚠️ Error during preprocessing")
         st.code(traceback.format_exc())
@@ -126,7 +126,7 @@ def apply_preprocessing(df, tools):
 # ===============================
 if st.button("Predict Price"):
     try:
-        processed_input = apply_preprocessing(input_df, tools)
+        processed_input = apply_preprocessing(input_df.copy(), tools)
 
         if processed_input is not None:
             prediction = model.predict(processed_input)

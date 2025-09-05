@@ -86,24 +86,19 @@ st.subheader("🔍 Entered Details")
 st.write(input_df)
 
 # ===============================
-# Apply preprocessing (fixed version)
+# Apply preprocessing (strict numeric output)
 # ===============================
 def apply_preprocessing(df, tools):
     try:
-        # Identify expected features
-        expected_features = tools.get("feature_names", None)
         num_cols = tools.get("num_cols", [])
         cat_cols = tools.get("cat_cols", [])
+        expected_features = tools.get("feature_names", None)
 
-        # Reindex to match training features
-        if expected_features is not None:
-            df = df.reindex(columns=expected_features, fill_value=0)
-
-        # Scale numerical columns
+        # ----- Scale numeric columns -----
         if "scaler" in tools and num_cols:
             df[num_cols] = tools["scaler"].transform(df[num_cols])
 
-        # Encode categorical columns
+        # ----- Encode categorical columns -----
         if "encoder" in tools and cat_cols:
             encoded = tools["encoder"].transform(df[cat_cols])
             if not isinstance(encoded, (pd.DataFrame, np.ndarray)):
@@ -113,6 +108,10 @@ def apply_preprocessing(df, tools):
             # Drop original categorical cols and concat encoded
             df = df.drop(columns=cat_cols)
             df = pd.concat([df, encoded_df], axis=1)
+
+        # ----- Reindex to match training -----
+        if expected_features is not None:
+            df = df.reindex(columns=expected_features, fill_value=0)
 
         return df
 
@@ -129,6 +128,9 @@ if st.button("Predict Price"):
         processed_input = apply_preprocessing(input_df.copy(), tools)
 
         if processed_input is not None:
+            st.subheader("✅ Processed Input (numeric only)")
+            st.write(processed_input)
+
             prediction = model.predict(processed_input)
             st.success(f"💰 Estimated Car Price: **₹ {prediction[0]:,.2f}**")
 

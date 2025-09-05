@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import pickle
 import traceback
+import re
 
 # ===============================
 # Load preprocessing tools & model
@@ -32,30 +33,23 @@ st.title("🚗 Car Price Prediction App")
 st.markdown("Fill in the details below to get the predicted price of the car.")
 
 # ===============================
-# Show available columns (debugging)
+# Show available columns
 # ===============================
 st.sidebar.header("📑 Dataset Info")
 st.sidebar.write("Columns detected in dataset:", list(data.columns))
 
 # ===============================
-# Column mapping
-# 🔴 Change the values here to EXACTLY match your CSV headers
-# Example: if your CSV header is 'Mileage(kmpl)' then put that instead of 'Mileage'
+# Column mapping (using your real dataset headers)
 # ===============================
 col_map = {
-    "year": "Year",                 # Manufacturing Year column
-    "mileage": "Mileage",           # Mileage column
-    "engine_size": "Engine_Size",   # Engine Size column
-    "brand": "Brand",               # Brand column
-    "fuel_type": "Fuel_Type",       # Fuel Type column
-    "transmission": "Transmission"  # Transmission column
+    "year": "Year",
+    "kilometer": "Kilometer",
+    "engine": "Engine",
+    "make": "Make",
+    "model": "Model",
+    "fuel_type": "Fuel Type",
+    "transmission": "Transmission"
 }
-
-# Validate columns
-missing = [v for v in col_map.values() if v not in data.columns]
-if missing:
-    st.error(f"⚠️ These columns are missing in your Preprocessed.csv: {missing}")
-    st.stop()
 
 # ===============================
 # Dynamic Input Fields
@@ -70,31 +64,33 @@ with col1:
         value=int(data[col_map["year"]].median())
     )
 
-    mileage = st.number_input(
-        "Mileage",
-        min_value=float(data[col_map["mileage"]].min()),
-        max_value=float(data[col_map["mileage"]].max()),
-        value=float(data[col_map["mileage"]].median())
+    kilometer = st.number_input(
+        "Kilometers Driven",
+        min_value=int(data[col_map["kilometer"]].min()),
+        max_value=int(data[col_map["kilometer"]].max()),
+        value=int(data[col_map["kilometer"]].median())
     )
 
-    engine_size = st.number_input(
-        "Engine Size (CC)",
-        min_value=int(data[col_map["engine_size"]].min()),
-        max_value=int(data[col_map["engine_size"]].max()),
-        value=int(data[col_map["engine_size"]].median())
-    )
+    # Engine values like "1498 CC" → extract digits
+    engine_options = data[col_map["engine"]].dropna().unique()
+    engine = st.selectbox("Engine Size", engine_options)
+    engine_numeric = int(re.findall(r"\d+", str(engine))[0]) if re.findall(r"\d+", str(engine)) else 0
 
 with col2:
-    brand = st.selectbox("Car Brand", sorted(data[col_map["brand"]].dropna().unique()))
+    make = st.selectbox("Car Make", sorted(data[col_map["make"]].dropna().unique()))
+    model = st.selectbox("Car Model", sorted(data[col_map["model"]].dropna().unique()))
     fuel_type = st.selectbox("Fuel Type", sorted(data[col_map["fuel_type"]].dropna().unique()))
     transmission = st.selectbox("Transmission", sorted(data[col_map["transmission"]].dropna().unique()))
 
-# Collect inputs into DataFrame
+# ===============================
+# Build input DataFrame
+# ===============================
 input_dict = {
     col_map["year"]: year,
-    col_map["mileage"]: mileage,
-    col_map["engine_size"]: engine_size,
-    col_map["brand"]: brand,
+    col_map["kilometer"]: kilometer,
+    col_map["engine"]: engine,  # keep original string, preprocessing may handle it
+    col_map["make"]: make,
+    col_map["model"]: model,
     col_map["fuel_type"]: fuel_type,
     col_map["transmission"]: transmission
 }
